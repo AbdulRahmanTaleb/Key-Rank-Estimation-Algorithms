@@ -3,6 +3,7 @@ import sys
 import h5py
 import numpy as np
 import random
+from RIM_DATABASE import *
 
 def check_file_exists(file_path):
 	if os.path.exists(file_path) == False:
@@ -48,6 +49,10 @@ def generate_key_byte(size = 8):
 def hamming_distance(a, b):
         return bin(a^b).count('1')
 
+#Calculate the hamming weight
+def hamming_weight(a):
+        return bin(a).count('1')
+
 
 def correlation_max_key_byte(key_byte, plaintexts_byte, traces):
 
@@ -55,9 +60,9 @@ def correlation_max_key_byte(key_byte, plaintexts_byte, traces):
         distances = []
         for p in plaintexts_byte:
                 tmp = key_byte ^ p
-                distances = distances + [hamming_distance(tmp, AES_Sbox[tmp])]
+                distances = distances + [hamming_weight(AES_Sbox[tmp])]
+
         distances = np.array(distances)
-        #print("distances = " + str(distances))
 
         #correlations coeffs calculation for a single key possibility
         corrcoeffs = []
@@ -66,8 +71,6 @@ def correlation_max_key_byte(key_byte, plaintexts_byte, traces):
                 #print(instant)
                 corrcoeffs = corrcoeffs + [np.corrcoef(distances, traces[:,instant])[1,0]]
 
-        #print("corrcoeffs = "+ str(corrcoeffs))
-        print(corrcoeffs)
         return np.amax(np.abs(corrcoeffs))
 
         
@@ -83,30 +86,35 @@ def CPA_byte(plaintexts_byte, traces):
         for i in range(len(possible_keys)):
                 corrcoeffs = corrcoeffs + [correlation_max_key_byte(possible_keys[i], plaintexts_byte, traces)]
 
+                if(i%10 == 0):
+                        print("end key "+str(i))
+
         ind_key = np.argmax(corrcoeffs)
         
         return possible_keys[ind_key]
+
+
 
 def CPA_Attack(plaintexts, traces):
 
         key_estimation = []
 
-        for i in range(16):
-                key_estimation = key_estimation + [ CPA_byte(plaintexts[:, i], traces[:, (i*700):(i+1)*700]) ]
+        for i in range(0,16):
+                k = hex(CPA_byte(plaintexts[:, i], traces))
+                print("key[%d] = %s" % (i, k))
+                print("")
+                key_estimation.append(k)
 
         return np.array(key_estimation)
 
 
 
-plaintexts = [2, 3, 4, 5, 6]
-traces = [[1,2,3,4],[5,6,7,8]]
-#[[0,0,0,0] ,[1,1,1,1] ,[2,2,2,2], [3,3,3,3], [4,4,4,4]]
+plaintexts = read_plain_texts()
+traces = read_traces()
 
+assert(plaintexts.shape == (10000,16))
+assert(traces.shape == (10000, 3000))
 
-traces = np.array(traces)
-
-print(traces[:, 1:3])
-#print(traces[:,0])
-
-#print(CPA_byte(plaintexts, traces))
+print("start")
+print(CPA_Attack(plaintexts, traces))
 
