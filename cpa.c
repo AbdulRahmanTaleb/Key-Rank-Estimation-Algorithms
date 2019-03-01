@@ -5,6 +5,8 @@
 #include <omp.h>
 #include <time.h>
 #define NB_TRACES 10000
+#define TAILLE 16
+#define SAMPLES 3000
 
 
 static const int sbox[256] =
@@ -24,70 +26,17 @@ static const int sbox[256] =
             0x70, 0x3E, 0xB5, 0x66, 0x48, 0x03, 0xF6, 0x0E, 0x61, 0x35, 0x57, 0xB9, 0x86, 0xC1, 0x1D, 0x9E,
             0xE1, 0xF8, 0x98, 0x11, 0x69, 0xD9, 0x8E, 0x94, 0x9B, 0x1E, 0x87, 0xE9, 0xCE, 0x55, 0x28, 0xDF,
             0x8C, 0xA1, 0x89, 0x0D, 0xBF, 0xE6, 0x42, 0x68, 0x41, 0x99, 0x2D, 0x0F, 0xB0, 0x54, 0xBB, 0x16};
+            
+            
 
-
-void rvereseArray(char arr[], int start, int end)
-{
-    if (start >= end)
-    return;
-
-    int temp = arr[start];
-    arr[start] = arr[end];
-    arr[end] = temp;
-
-    // Recursive Function calling
-    rvereseArray(arr, start + 1, end - 1);
-}
-char* decToHexa(int n)
-{
-    // char array to store hexadecimal number
-    char* hexaDeciNum=(char*)malloc(sizeof(char)*10);
-
-    // counter for hexadecimal number array
-    int i = 0;
-    while(n!=0)
-    {
-        // temporary variable to store remainder
-        int temp  = 0;
-
-        // storing remainder in temp variable.
-        temp = n % 16;
-
-        // check if temp < 10
-        if(temp < 10)
-        {
-            hexaDeciNum[i] = temp + 48;
-            i++;
-        }
-        else
-        {
-            hexaDeciNum[i] = temp + 55;
-            i++;
-        }
-
-        n = n/16;
-    }
-    rvereseArray(hexaDeciNum,0,i-1);
-    hexaDeciNum[i]='\0';
-    // printing hexadecimal number array in reverse order
-    return hexaDeciNum;
-}
-
-int* GetColonneInt(int** tab,int index,int size){
-	int* t=(int*)malloc(sizeof(int)*size);
-	for(int i=0;i<size;i++){
-		t[i]=tab[i][index];
+int* generate_key_byte(){
+	int* keys=(int*)malloc(256*sizeof(int));
+	for(int i=0;i<256;i++){
+		keys[i]=i;
 	}
-	return t;
+	return keys;
 }
 
-double* GetColonneDouble(double** tab,int index,int size){
-	double* t=(double*)malloc(sizeof(double)*size);
-	for(int i=0;i<size;i++){
-		t[i]=tab[i][index];
-	}
-	return t;
-}
 double maxValue( double myArray [], int size)
 {
     int i;
@@ -99,28 +48,22 @@ double maxValue( double myArray [], int size)
     {
     	if(myArray[i]>maxValue)
     	    maxValue=myArray[i];
-        }
-        return maxValue;
+    }
+    return maxValue;
 }
+
 int ArgMax(double myArray [], int size){
-	int argmax;
-	int max=maxValue(myArray,size);
+	int argmax = 0;
+	double maxValue = myArray[0];
+
 	for (int i=0;i<size;i++)
-    	{
-    		if(myArray[i]==max){
-    			argmax=i;
-    		}
-    	}
+    {
+    	if(myArray[i]>maxValue){
+    	    maxValue=myArray[i];
+    	    argmax = i;
+		}
+    }
 	return argmax;
-}
-
-
-int* generate_key_byte(){
-	int* keys=(int*)malloc(256*sizeof(int));
-	for(int i=0;i<256;i++){
-		keys[i]=i;
-	}
-	return keys;
 }
 
 int HammingDistance(int a,int b){
@@ -143,7 +86,7 @@ int hamming_weight(int x){
 	return HammingWeight ;
 }
 
-double correlationPearson(double tableauX[], double tableauY[], int tailleTableau)
+double correlationPearson(double tableauX[], double ** traces, int instant, int tailleTableau)
 {
 	double sommeXY=0; //somme des Xi*yi
 	double sommeX=0;//somme des Xi
@@ -154,52 +97,115 @@ double correlationPearson(double tableauX[], double tableauY[], int tailleTablea
 	for( i=0; i<tailleTableau; i++)
 	{
 		sommeX+=tableauX[i];
-		sommeY+=tableauY[i];
+		sommeY+=traces[i][instant];
 		sommeXiCarre+=pow(tableauX[i], 2.0);
-		sommeYiCarre+=pow(tableauY[i], 2.0);
-		sommeXY=sommeXY+(tableauX[i]*tableauY[i]);
+		sommeYiCarre+=pow(traces[i][instant], 2.0);
+		sommeXY=sommeXY+(tableauX[i]*traces[i][instant]);
 	}
 	double r=((tailleTableau*sommeXY)-sommeX*sommeY)/sqrt((tailleTableau*sommeXiCarre-pow(sommeX,2.0))*(tailleTableau*sommeYiCarre-pow(sommeY,2.0)));
+	if(r < 0){
+		return r * (-1);
+	}
 	return r;
 }
-double correlation_max_key_byte(int key_byte,int* plaintexts_byte,double** traces){
+
+double correlation_max_key_byte(int key_byte,int** plaintexts, int ind_byte,double** traces){
 	double distance[NB_TRACES];
 	int tmp;
 	for(int i=0;i<NB_TRACES;i++){
-		tmp=key_byte ^ plaintexts_byte[i];
+		tmp=key_byte ^ plaintexts[i][ind_byte];
 		distance[i]=hamming_weight(sbox[tmp]);
 	}
-	int size=sizeof(traces[0])/sizeof(int);
-	double corrcoeffs[size];
-	for(int i=0;i<size;i++){
-		corrcoeffs[i]=correlationPearson(distance,GetColonneDouble(traces,i,size),NB_TRACES);
+	
+
+	double corrcoeffs[SAMPLES];
+	for(int i=0;i<SAMPLES;i++){
+		corrcoeffs[i]=correlationPearson(distance,traces, i,SAMPLES);
 	}
-	return maxValue(corrcoeffs,size);
+	return maxValue(corrcoeffs,SAMPLES);
 
 }
 
-int CPA_byte(int* plaintexts_byte,double** traces){
+int CPA_byte(int** plaintexts, int ind_byte,double** traces, int * possible_keys){
 	int ind_key;
-	int* possible_keys=generate_key_byte();
 	double corrcoeffs[256];
 	for(int i=0;i<256;i++){
-		corrcoeffs[i]=correlation_max_key_byte(possible_keys[i],plaintexts_byte, traces);
-	}
-	ind_key=ArgMax(corrcoeffs,256);
-	return possible_keys[ind_key];
-}
-
-char** CPA_Attack(int** plaintexts,double** traces){
-	int k;
-	char** key_estimation=(char**)malloc(16*16*sizeof(char*));
-	for(int i=0;i<16;i++){
-		k=CPA_byte(GetColonneInt(plaintexts,i,NB_TRACES),traces);
-		char* c=decToHexa(k);
-		for(int j=0;j<strlen(c)+1;j++){
-			key_estimation[i][j]=c[j];
+		corrcoeffs[i]=correlation_max_key_byte(possible_keys[i],plaintexts, ind_byte, traces);
+		if(i%10 == 0){
+			printf("End key %d\n", i); 
 		}
 	}
-	return key_estimation;
+	ind_key=ArgMax(corrcoeffs,256);
+	printf("ind_key = %d\n", ind_key);
+	return ind_key;
+}
+
+int * CPA_Attack(int** plaintexts,double** traces, int * possible_keys){
+	int k;
+	int* ind_key_estimation=(int*)malloc(TAILLE*sizeof(int));
+	
+	for(int i=0;i<16;i++){
+		ind_key_estimation[i] = CPA_byte(plaintexts, i ,traces, possible_keys);
+		printf("key[%d] = 0x%.2x \n", i, possible_keys[ind_key_estimation[i]]);
+	}
+	return ind_key_estimation;
+}
+
+
+void main(int agrc, char ** argv){
+	
+	int* possible_keys=generate_key_byte();
+	int i,j;
+	
+	FILE * plain_file = fopen(argv[1], "r");
+	if(plain_file == NULL){
+		printf("Error While Reading Plain Texts File\n");
+		return;
+	}
+	
+	int ** plain_texts = (int **)malloc(NB_TRACES * sizeof(int *));
+	
+	for(i = 0; i < NB_TRACES; i++){
+		plain_texts[i] = (int *)malloc(TAILLE * sizeof(int));
+		for(j=0; j< TAILLE; j++){
+			fscanf(plain_file, " %x", (&plain_texts[i][j]));
+		}
+	}
+	
+	fclose(plain_file);
+	
+	FILE * traces_file = fopen(argv[2], "r");
+	if(traces_file == NULL){
+		printf("Error While Reading Traces File\n");
+		return;
+	}
+	
+	double ** traces = (double **)malloc(NB_TRACES * sizeof(double *));
+	
+	for(i = 0; i < NB_TRACES; i++){
+		traces[i] = (double *)malloc(SAMPLES* sizeof(double));
+		
+		for(j=0; j< SAMPLES; j++){
+			fscanf(traces_file, " %lf", (&traces[i][j]));
+		}
+	}
+	
+	fclose(traces_file);
+	
+	printf("Lecture des données s'est bien passée\n");
+	printf("Début Attack\n");
+	
+	int * key_est = CPA_Attack(plain_texts, traces, possible_keys);
+	
+	printf("FIN Attack\n");
+	
+	for(i =0; i<TAILLE; i++){
+		printf("0x%.2x ", possible_keys[key_est[i]]);
+	}
+	printf("\n");
+	return;
+
+
 }
 
 
